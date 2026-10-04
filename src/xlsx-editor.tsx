@@ -223,6 +223,12 @@ export function XlsxEditor({
   };
 
   const onEditKey = (e: KeyboardEvent) => {
+    // Ctrl/Cmd+S also works while a cell or the formula bar is being edited (the edit is saved too).
+    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+      e.preventDefault();
+      void save();
+      return;
+    }
     if (e.key === 'Enter') {
       e.preventDefault();
       commit(e.shiftKey ? -1 : 1, 0);

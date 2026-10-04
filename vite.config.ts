@@ -7,9 +7,9 @@ export default defineConfig({
     sourcemap: true,
     cssCodeSplit: false,
     lib: {
-      entry: 'src/index.ts',
+      entry: { 'xlsx-editor': 'src/index.ts', extension: 'src/extension.ts' },
       formats: ['es'],
-      fileName: 'xlsx-editor',
+      fileName: (_format, name) => `${name}.js`,
       cssFileName: 'style',
     },
     rollupOptions: {
@@ -19,6 +19,6 @@ export default defineConfig({
   test: {
     // happy-dom provides DOMParser for the xlsx reader tests; everything else runs in plain Node.
     environment: 'happy-dom',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 });

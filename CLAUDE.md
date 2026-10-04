@@ -37,6 +37,13 @@ npm run build      # dist/: JS, style.css, .d.ts
 
 Use Node >= 20 (`.nvmrc` = 22). The default `node` on this machine may be older; `/opt/homebrew/bin/node` is newer.
 
+## As an extension
+
+`src/extension.ts` is the descriptor for `@owload/editor-sdk` (a plain object, type-only import: the SDK is a dev
+dependency). `src/lib/inspect.ts` implements `inspect()`; keep its list in step with what `xlsx-io.ts` drops on save
+(the "Known limitations" below). The contract and its rules are in the SDK's README; `src/test/conformance.test.tsx`
+runs the SDK's suite and must keep passing. The host owns closing; the component never needs a close button.
+
 ## Architecture
 
 - `src/lib/` is framework-free: `xlsx-io.ts` (reader/writer; `DOMParser` + own `zip.ts` on

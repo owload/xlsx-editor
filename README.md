@@ -16,6 +16,25 @@ script builds `dist/` on install):
 Pin an exact tag (never a branch) and review the diff on every bump. The host must provide React 19
 (`peerDependencies`); with Vite add `resolve.dedupe: ['react', 'react-dom']` to avoid two React copies.
 
+## As an Owload extension
+
+The package follows the [`@owload/editor-sdk`](https://github.com/owload/editor-sdk) contract
+([ADR 0019](https://github.com/owload/owload-docs/blob/main/decisions/0019-editor-extensions.md)), so the Owload client
+plugs it in through a descriptor instead of rendering the component by hand:
+
+```ts
+import { extension } from "@owload/xlsx-editor/extension"; // id "xlsx", ".xlsx", "New spreadsheet", 100 MiB
+import "@owload/xlsx-editor/style.css";                      // imported lazily by the host, with the editor
+```
+
+- `extension.load()` returns the editor as a separate chunk; the descriptor itself is a few lines.
+- `extension.inspect(bytes)` reads a file and lists what saving it with this editor would drop (charts, images,
+  comments, conditional formatting, frozen panes, row heights, …) as `{ id, label }` entries, or an empty list
+  when nothing would be lost. The host shows it before the user edits.
+- `readOnly` is not supported yet; the property is optional in the contract.
+- Ctrl/Cmd+S saves from everywhere in the editor, also while a cell or the formula bar is being edited.
+- The conformance suite of the SDK runs in `src/test/conformance.test.tsx`.
+
 ## Usage
 
 ```tsx
