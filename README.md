@@ -28,9 +28,11 @@ import "@owload/xlsx-editor/style.css";                      // imported lazily 
 ```
 
 - `extension.load()` returns the editor as a separate chunk; the descriptor itself is a few lines.
-- `extension.inspect(bytes)` reads a file and lists what saving it with this editor would drop (charts, images,
-  comments, conditional formatting, frozen panes, row heights, …) as `{ id, label }` entries, or an empty list
-  when nothing would be lost. The host shows it before the user edits.
+- **Saving can drop parts of a file** (see "Known limitations"). On opening a file the editor looks at it and, if it
+  holds something it cannot keep (charts, images, comments, conditional formatting, frozen panes, row heights, …),
+  shows a dismissible note under the title bar: "Saving this file here will drop: …". The note goes away when the user
+  dismisses it or saves. This is the editor's own business, not the host's
+  ([ADR 0022](https://github.com/owload/owload-docs/blob/main/decisions/0022-editors-warn-about-their-own-losses.md)).
 - `extension.preview(bytes, { size })` draws a PNG of the top-left corner of the active sheet (column letters, row numbers, displayed values with formulas evaluated and number formats applied, bold, fills and colors) for the file grid ([ADR 0020](https://github.com/owload/owload-docs/blob/main/decisions/0020-extension-previews.md)); `null` for an empty workbook, a file over 20 MiB, or where there is no `OffscreenCanvas`.
 - `readOnly` is not supported yet; the property is optional in the contract.
 - The title bar has a close button (`aria-label="Close"`) that calls `onClose`; the host asks about unsaved changes and removes the editor.

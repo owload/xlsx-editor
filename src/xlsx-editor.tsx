@@ -115,6 +115,8 @@ export function XlsxEditor({
   const clip = useRef<{ text: string; cells: (Cell | undefined)[][] } | null>(null);
   const [zoom, setZoom] = useState(1);
   const [find, setFind] = useState<{ replace: boolean; message: string } | null>(null);
+  // What saving this file would drop (the editor rebuilds it from what it supports); empty if nothing.
+  const [losses, setLosses] = useState<string[]>([]);
 
   const { book } = h;
   const si = book.active;
@@ -144,6 +146,13 @@ export function XlsxEditor({
         if (cancelled) return;
         dispatch({ type: 'load', book: loaded });
         setLoad({ status: 'ready' });
+        if (bytes && bytes.byteLength > 0) {
+          // Looked at in the background; the file was read above, so a failure here only means no note.
+          import('./lib/inspect')
+            .then((m) => m.inspectWorkbook(bytes))
+            .then((r) => { if (!cancelled) setLosses(r.unsupported.map((u) => u.label)); })
+            .catch(() => undefined);
+        }
       } catch (e) {
         if (cancelled) return;
         const err = toError(e, 'Failed to open the file');
@@ -182,6 +191,7 @@ export function XlsxEditor({
       await onSave(bytes);
       dispatch({ type: 'saved', rev });
       setError(null);
+      setLosses([]); // the file has been rewritten: what it could not hold is gone
     } catch (e) {
       fail(e, 'Failed to save');
     } finally {
@@ -514,6 +524,13 @@ export function XlsxEditor({
       {error && (
         <div className="xe-error" role="alert" onClick={() => setError(null)}>
           {error}
+        </div>
+      )}
+
+      {losses.length > 0 && (
+        <div className="xe-note" role="note">
+          <span>Saving this file here will drop: {losses.map((l) => l.toLowerCase()).join(', ')}.</span>
+          <button onClick={() => setLosses([])}>Got it</button>
         </div>
       )}
 

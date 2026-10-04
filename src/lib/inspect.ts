@@ -1,4 +1,3 @@
-import type { InspectResult, UnsupportedFeature } from '@owload/editor-sdk';
 import { unzip } from './zip';
 
 /**
@@ -10,6 +9,18 @@ import { unzip } from './zip';
  * Plain fonts and other cosmetic details are not listed: nearly every file has them, and a note
  * that always appears would be ignored.
  */
+
+export interface LossFinding {
+  /** Stable identifier, for tests ("charts"). */
+  id: string;
+  /** Short English text shown to the user ("Charts"). */
+  label: string;
+}
+
+export interface InspectResult {
+  /** Empty when nothing would be lost. */
+  unsupported: LossFinding[];
+}
 
 const dec = new TextDecoder();
 
@@ -75,6 +86,6 @@ export async function inspectWorkbook(data: Uint8Array): Promise<InspectResult> 
     strings: text('xl/sharedStrings.xml'),
     sheets: names.filter((n) => /^xl\/worksheets\/[^/]+\.xml$/.test(n)).map(text),
   };
-  const unsupported: UnsupportedFeature[] = RULES.filter((rule) => rule.test(names, texts)).map(({ id, label }) => ({ id, label }));
+  const unsupported: LossFinding[] = RULES.filter((rule) => rule.test(names, texts)).map(({ id, label }) => ({ id, label }));
   return { unsupported };
 }

@@ -102,3 +102,7 @@
 .xe-state { flex:1; display:flex; align-items:center; justify-content:center; padding:24px; color:var(--muted); }
 .xe-state.xe-error { background:transparent; color:#d1242f; cursor:default; }
 .xe button.xe-rb.xe-close{margin-left:2px;font-size:14px}
+.xe-note{display:flex;align-items:flex-start;gap:12px;padding:6px 10px;background:#fff8e1;color:#7a4b00;border-bottom:1px solid #f0d58a;font-size:12px}
+.xe-note span{flex:1}
+.dark .xe-note{background:#3a2e12;color:#f2d38b;border-bottom-color:#5c4a1e}
+.xe .xe-note button{border:none;background:transparent;text-decoration:underline;padding:0;color:inherit;cursor:pointer}
