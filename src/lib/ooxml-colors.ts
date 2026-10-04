@@ -119,11 +119,9 @@ export function resolveColor(a: ColorAttrs, theme: ThemeColors): string | undefi
     return applyTint(base, Number.isFinite(tint) ? Math.max(-1, Math.min(1, tint)) : 0);
   }
   if (a.indexed != null && a.indexed !== '') {
-    const i = Number(a.indexed);
-    // 64 and 65 are the system foreground and background colors: black and white.
-    if (i === 64) return '#000000';
-    if (i === 65) return '#ffffff';
-    return INDEXED_COLORS[i];
+    // 64 and 65 are the system foreground and background colors, "automatic": a fill or text that states them
+    // has no color of its own (a solid fill in indexed 64 is how some programs write "no fill").
+    return INDEXED_COLORS[Number(a.indexed)];
   }
   return undefined;
 }

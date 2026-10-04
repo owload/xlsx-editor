@@ -50,8 +50,8 @@ describe('colors stated as theme, tint or index', () => {
     expect(resolveColor({ theme: '4' }, DEFAULT_THEME)).toBe('#4472c4');
     expect(near(resolveColor({ theme: '4', tint: '0.7999816888943144' }, DEFAULT_THEME)!, '#dae3f3')).toBe(true);
     expect(resolveColor({ indexed: '2' }, DEFAULT_THEME)).toBe('#ff0000');
-    expect(resolveColor({ indexed: '64' }, DEFAULT_THEME)).toBe('#000000');
-    expect(resolveColor({ indexed: '65' }, DEFAULT_THEME)).toBe('#ffffff');
+    expect(resolveColor({ indexed: '64' }, DEFAULT_THEME)).toBeUndefined(); // automatic: no color of its own
+    expect(resolveColor({ indexed: '65' }, DEFAULT_THEME)).toBeUndefined();
     expect(resolveColor({ indexed: '200' }, DEFAULT_THEME)).toBeUndefined();
     expect(resolveColor({ theme: '99' }, DEFAULT_THEME)).toBeUndefined();
     expect(resolveColor({ rgb: 'zzzzzz' }, DEFAULT_THEME)).toBeUndefined();
