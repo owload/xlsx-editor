@@ -31,6 +31,7 @@ import "@owload/xlsx-editor/style.css";                      // imported lazily 
 - `extension.inspect(bytes)` reads a file and lists what saving it with this editor would drop (charts, images,
   comments, conditional formatting, frozen panes, row heights, …) as `{ id, label }` entries, or an empty list
   when nothing would be lost. The host shows it before the user edits.
+- `extension.preview(bytes, { size })` draws a PNG of the top-left corner of the active sheet (column letters, row numbers, displayed values with formulas evaluated and number formats applied, bold, fills and colors) for the file grid ([ADR 0020](https://github.com/owload/owload-docs/blob/main/decisions/0020-extension-previews.md)); `null` for an empty workbook, a file over 20 MiB, or where there is no `OffscreenCanvas`.
 - `readOnly` is not supported yet; the property is optional in the contract.
 - Ctrl/Cmd+S saves from everywhere in the editor, also while a cell or the formula bar is being edited.
 - The conformance suite of the SDK runs in `src/test/conformance.test.tsx`.

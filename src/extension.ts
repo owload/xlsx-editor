@@ -17,4 +17,7 @@ export const extension = {
   maxFileBytes: 100 * 1024 * 1024,
   load: () => import('./xlsx-editor').then((m) => ({ default: m.XlsxEditor })),
   inspect: (data: Uint8Array) => import('./lib/inspect').then((m) => m.inspectWorkbook(data)),
+  // The top-left corner of the active sheet, drawn lazily; null where there is no canvas or no data.
+  preview: (data: Uint8Array, options: { size: number }) =>
+    import('./lib/preview').then((m) => m.renderSheetPreview(data, options.size)),
 } satisfies EditorExtension;

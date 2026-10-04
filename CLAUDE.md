@@ -42,7 +42,8 @@ Use Node >= 20 (`.nvmrc` = 22). The default `node` on this machine may be older;
 `src/extension.ts` is the descriptor for `@owload/editor-sdk` (a plain object, type-only import: the SDK is a dev
 dependency). `src/lib/inspect.ts` implements `inspect()`; keep its list in step with what `xlsx-io.ts` drops on save
 (the "Known limitations" below). The contract and its rules are in the SDK's README; `src/test/conformance.test.tsx`
-runs the SDK's suite and must keep passing. The host owns closing; the component never needs a close button.
+runs the SDK's suite and must keep passing. `src/lib/preview.ts` draws the PNG preview (`layoutSheetPreview` is pure and tested;
+`renderSheetPreview` draws through the adapter in `src/lib/canvas.ts`). The host owns closing; the component never needs a close button.
 
 ## Architecture
 

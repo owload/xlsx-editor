@@ -42,7 +42,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
-    "@owload/editor-sdk": "github:owload/editor-sdk#4fd1f2e22a46706fe131f521a1d7dcc4c83ae63d",
+    "@owload/editor-sdk": "github:owload/editor-sdk#0189b049d0d16fab26fd576687a22b37e481c515",
     "@types/node": "^22.20.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
