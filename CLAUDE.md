@@ -43,7 +43,7 @@ Use Node >= 20 (`.nvmrc` = 22). The default `node` on this machine may be older;
 dependency). `src/lib/inspect.ts` implements `inspect()`; keep its list in step with what `xlsx-io.ts` drops on save
 (the "Known limitations" below). The contract and its rules are in the SDK's README; `src/test/conformance.test.tsx`
 runs the SDK's suite and must keep passing. `src/lib/preview.ts` draws the PNG preview (`layoutSheetPreview` is pure and tested;
-`renderSheetPreview` draws through the adapter in `src/lib/canvas.ts`). The host owns closing; the component never needs a close button.
+`renderSheetPreview` draws through the adapter in `src/lib/canvas.ts`). The component has a close button in its title bar (`aria-label="Close"`, shown when `onClose` is given); it only calls `onClose` — the host asks about unsaved changes and removes the editor.
 
 ## Architecture
 

@@ -101,3 +101,4 @@
 
 .xe-state { flex:1; display:flex; align-items:center; justify-content:center; padding:24px; color:var(--muted); }
 .xe-state.xe-error { background:transparent; color:#d1242f; cursor:default; }
+.xe button.xe-rb.xe-close{margin-left:2px;font-size:14px}

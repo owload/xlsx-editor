@@ -33,6 +33,7 @@ import "@owload/xlsx-editor/style.css";                      // imported lazily 
   when nothing would be lost. The host shows it before the user edits.
 - `extension.preview(bytes, { size })` draws a PNG of the top-left corner of the active sheet (column letters, row numbers, displayed values with formulas evaluated and number formats applied, bold, fills and colors) for the file grid ([ADR 0020](https://github.com/owload/owload-docs/blob/main/decisions/0020-extension-previews.md)); `null` for an empty workbook, a file over 20 MiB, or where there is no `OffscreenCanvas`.
 - `readOnly` is not supported yet; the property is optional in the contract.
+- The title bar has a close button (`aria-label="Close"`) that calls `onClose`; the host asks about unsaved changes and removes the editor.
 - Ctrl/Cmd+S saves from everywhere in the editor, also while a cell or the formula bar is being edited.
 - The conformance suite of the SDK runs in `src/test/conformance.test.tsx`.
 

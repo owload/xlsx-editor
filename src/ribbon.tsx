@@ -25,6 +25,7 @@ interface Props {
   fileName: string;
   dirty: boolean;
   saving: boolean;
+  onClose?: () => void;
   a: RibbonActions;
 }
 
@@ -75,7 +76,7 @@ function ColorBtn(props: { title: string; value: string; letter: string; onPick:
   );
 }
 
-export function Ribbon({ st, z, canUndo, canRedo, fileName, dirty, saving, a }: Props) {
+export function Ribbon({ st, z, canUndo, canRedo, fileName, dirty, saving, onClose, a }: Props) {
   const s = st ?? {};
   return (
     <div className="xe-ribbon-wrap" onMouseDown={(e) => !(e.target instanceof HTMLSelectElement) && !(e.target instanceof HTMLInputElement) && e.preventDefault()}>
@@ -92,6 +93,11 @@ export function Ribbon({ st, z, canUndo, canRedo, fileName, dirty, saving, a }: 
         <button className="xe-savebtn" onClick={a.save} disabled={saving}>
           {saving ? 'Saving…' : 'Save'}
         </button>
+        {onClose && (
+          <button className="xe-rb xe-dark xe-close" aria-label="Close" title="Close" disabled={saving} onClick={onClose}>
+            ✕
+          </button>
+        )}
       </div>
       <div className="xe-tabstrip">
         <span className="xe-rtab xe-cur">Home</span>

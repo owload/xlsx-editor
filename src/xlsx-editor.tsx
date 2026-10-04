@@ -59,6 +59,11 @@ export interface XlsxEditorProps {
   onDirtyChange?: (dirty: boolean) => void;
   /** Called when loading or saving fails (the message is also shown in the UI). */
   onError?: (error: Error) => void;
+  /**
+   * Called when the user clicks the close button in the title bar. The button is shown only if this is
+   * given. The editor closes nothing itself and does not ask about unsaved changes: the host does.
+   */
+  onClose?: () => void;
   /** Reject files larger than this many bytes. Default: 100 MiB. */
   maxFileBytes?: number;
   /**
@@ -94,6 +99,7 @@ export function XlsxEditor({
   onSave,
   onDirtyChange,
   onError,
+  onClose,
   maxFileBytes = DEFAULT_MAX_FILE_BYTES,
   internalClipboardOnly = false,
   className,
@@ -454,6 +460,7 @@ export function XlsxEditor({
         fileName={fileName}
         dirty={dirty}
         saving={saving}
+        onClose={onClose}
         a={{
           save: () => void save(),
           undo: () => dispatch({ type: 'undo' }),
