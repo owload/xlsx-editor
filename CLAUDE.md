@@ -62,5 +62,5 @@ runs the SDK's suite and must keep passing. `src/lib/preview.ts` draws the PNG p
 
 ## Known limitations (data dropped on save)
 
-Charts, images, conditional formatting, data validation, defined names, comments, freeze panes, row heights,
-theme/indexed colors, array formulas. Keep `README.md` in sync when this changes.
+Charts, images, conditional formatting, data validation, defined names, comments, freeze panes,
+array formulas (theme, tinted and indexed colors are converted to fixed colors on opening, see `src/lib/ooxml-colors.ts`). Keep `README.md` in sync when this changes.

@@ -1,5 +1,5 @@
-import type { Book, Cell, Rect, Style } from './types';
-import { getCell, usedSize } from './types';
+import type { Book, Cell, Rect, Sheet, Style } from './types';
+import { getCell, inheritedStyle, usedSize } from './types';
 import { display, NUM_RE, shiftFormula } from './formula';
 import type { Evaluator } from './formula';
 import { encodeAddr } from './addr';
@@ -18,14 +18,57 @@ const forRect = (rc: Rect, fn: (r: number, c: number) => void) => {
   for (let r = rc.r1; r <= rc.r2; r++) for (let c = rc.c1; c <= rc.c2; c++) fn(r, c);
 };
 
+const applyPatch = (base: Style | undefined, patch: Partial<Style>): Style | undefined => {
+  const st: Record<string, unknown> = { ...base, ...patch };
+  for (const k of Object.keys(st)) if (st[k] === undefined || st[k] === false) delete st[k];
+  return Object.keys(st).length ? (st as Style) : undefined;
+};
+
+/** A whole column or row (chosen by its header): its style changes, and so do the cells that exist in it. */
+function patchWhole(book: Book, si: number, rc: Rect, patch: Partial<Style>): Book {
+  const key = rc.whole === 'col' ? 'colStyles' : 'rowStyles';
+  const [from, to] = rc.whole === 'col' ? [rc.c1, rc.c2] : [rc.r1, rc.r2];
+  const s = book.sheets[si];
+  const styles: Record<number, Style> = { ...s[key] };
+  for (let i = from; i <= to; i++) {
+    const next = applyPatch(styles[i], patch);
+    if (next) styles[i] = next;
+    else delete styles[i];
+  }
+  const edits: Edit[] = [];
+  s.rows.forEach((row, r) => {
+    if (!row) return;
+    if (rc.whole === 'row' && (r < from || r > to)) return;
+    row.forEach((cell, c) => {
+      if (!cell || (rc.whole === 'col' && (c < from || c > to))) return;
+      const st = applyPatch(cell.st, patch);
+      const next: Cell = { ...cell, st: st ?? (inheritedFor(s, key, r, c) ? {} : undefined) };
+      if (!next.st) delete next.st;
+      edits.push({ r, c, cell: norm(next) });
+    });
+  });
+  const withStyles: Book = { ...book, sheets: book.sheets.map((x, k) => (k === si ? { ...x, [key]: styles } : x)) };
+  return edits.length ? setCells(withStyles, si, edits) : withStyles;
+}
+
+/** Whether a cell with no formatting of its own would be shown with a row's or column's style (so it needs an explicit `{}`). */
+const inheritedFor = (s: Sheet, key: 'colStyles' | 'rowStyles', r: number, c: number): boolean => {
+  const other = key === 'colStyles' ? s.rowStyles?.[r] : s.colStyles?.[c];
+  return !!other && Object.keys(other).length > 0;
+};
+
 export function patchStyle(book: Book, si: number, rc: Rect, patch: Partial<Style>): Book {
+  if (rc.whole) return patchWhole(book, si, rc, patch);
   const s = book.sheets[si];
   const edits: Edit[] = [];
   forRect(rc, (r, c) => {
-    const cell = getCell(s, r, c) ?? { raw: '' };
-    const st: Record<string, unknown> = { ...cell.st, ...patch };
-    for (const k of Object.keys(st)) if (st[k] === undefined || st[k] === false) delete st[k];
-    const next: Cell = { ...cell, st: Object.keys(st).length ? (st as Style) : undefined };
+    // A cell that does not exist yet has the formatting of its row or column, and the change starts from it.
+    const inherited = getCell(s, r, c) ? undefined : inheritedStyle(s, r, c);
+    const cell = getCell(s, r, c) ?? { raw: '', ...(inherited && { st: inherited }) };
+    const st = applyPatch(cell.st, patch);
+    // No formatting left on a cell in a styled row or column is kept as an empty style, so the row's or
+    // column's formatting does not come back.
+    const next: Cell = { ...cell, st: st ?? (inherited ? {} : undefined) };
     if (!next.st) delete next.st;
     edits.push({ r, c, cell: norm(next) });
   });
@@ -61,7 +104,13 @@ export function clearContents(book: Book, si: number, rc: Rect): Book {
   const edits: Edit[] = [];
   forRect(rc, (r, c) => {
     const cell = getCell(s, r, c);
-    if (cell && cell.raw !== '') edits.push({ r, c, cell: norm({ ...cell, raw: '', text: undefined }) });
+    if (cell && cell.raw !== '') {
+      const next: Cell = { ...cell, raw: '', text: undefined };
+      // A cell with no formatting of its own in a styled row or column stays, with an empty style, so that
+      // the row's or column's formatting does not appear in it.
+      if (!next.st && !next.z && inheritedStyle(s, r, c)) next.st = {};
+      edits.push({ r, c, cell: norm(next) });
+    }
   });
   return edits.length ? setCells(book, si, edits) : book;
 }

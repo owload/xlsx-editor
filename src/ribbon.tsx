@@ -1,3 +1,4 @@
+import { ColorMenu } from './color-menu';
 import type { Style } from './lib/types';
 
 export interface RibbonActions {
@@ -25,6 +26,8 @@ interface Props {
   fileName: string;
   dirty: boolean;
   saving: boolean;
+  /** Colors the workbook already uses, for the color menus. */
+  usedColors: string[];
   onClose?: () => void;
   a: RibbonActions;
 }
@@ -59,24 +62,7 @@ function Btn(props: { title: string; on?: boolean; disabled?: boolean; onClick: 
   );
 }
 
-function ColorBtn(props: { title: string; value: string; letter: string; onPick: (c: string) => void; onClear?: () => void }) {
-  return (
-    <span className="xe-colorgrp">
-      <label className="xe-rb xe-color" title={props.title}>
-        <span className="xe-cl">{props.letter}</span>
-        <i style={{ background: props.value }} />
-        <input type="color" value={props.value} onChange={(e) => props.onPick(e.target.value)} />
-      </label>
-      {props.onClear && (
-        <button className="xe-rb xe-tiny" title="No fill" onClick={props.onClear}>
-          ⊘
-        </button>
-      )}
-    </span>
-  );
-}
-
-export function Ribbon({ st, z, canUndo, canRedo, fileName, dirty, saving, onClose, a }: Props) {
+export function Ribbon({ st, z, canUndo, canRedo, fileName, dirty, saving, usedColors, onClose, a }: Props) {
   const s = st ?? {};
   return (
     <div className="xe-ribbon-wrap" onMouseDown={(e) => !(e.target instanceof HTMLSelectElement) && !(e.target instanceof HTMLInputElement) && e.preventDefault()}>
@@ -118,8 +104,8 @@ export function Ribbon({ st, z, canUndo, canRedo, fileName, dirty, saving, onClo
             <Btn title="Italic (Ctrl+I)" on={!!s.i} onClick={() => a.patch({ i: !s.i })}><i>I</i></Btn>
             <Btn title="Underline (Ctrl+U)" on={!!s.u} onClick={() => a.patch({ u: !s.u })}><u>U</u></Btn>
             <Btn title="All borders" on={!!s.bd} onClick={() => a.patch({ bd: !s.bd })}>▦</Btn>
-            <ColorBtn title="Fill color" letter="🪣" value={s.bg ?? '#ffff00'} onPick={(c) => a.patch({ bg: c })} onClear={() => a.patch({ bg: undefined })} />
-            <ColorBtn title="Text color" letter="A" value={s.color ?? '#d00000'} onPick={(c) => a.patch({ color: c })} />
+            <ColorMenu title="Fill color" icon="🪣" initial="#ffff00" current={s.bg} used={usedColors} clearLabel="No fill" onPick={(c) => a.patch({ bg: c })} onClear={() => a.patch({ bg: undefined })} />
+            <ColorMenu title="Text color" icon="A" initial="#ff0000" current={s.color} used={usedColors} clearLabel="Automatic" onPick={(c) => a.patch({ color: c })} onClear={() => a.patch({ color: undefined })} />
           </div>
           <div className="xe-glabel">Font</div>
         </div>

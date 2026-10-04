@@ -29,7 +29,7 @@ import "@owload/xlsx-editor/style.css";                      // imported lazily 
 
 - `extension.load()` returns the editor as a separate chunk; the descriptor itself is a few lines.
 - **Saving can drop parts of a file** (see "Known limitations"). On opening a file the editor looks at it and, if it
-  holds something it cannot keep (charts, images, comments, conditional formatting, frozen panes, row heights, …),
+  holds something it cannot keep (charts, images, comments, conditional formatting, frozen panes, …),
   shows a dismissible note under the title bar: "Saving this file here will drop: …". The note goes away when the user
   dismisses it or saves. This is the editor's own business, not the host's
   ([ADR 0022](https://github.com/owload/owload-docs/blob/main/decisions/0022-editors-warn-about-their-own-losses.md)).
@@ -82,6 +82,18 @@ The module does not warn on page unload and does not show a "discard changes?" d
 
 - Reading/writing `.xlsx`: values, formulas (with cached results), number formats, fonts (bold, italic,
   underline, size, color), fills, thin borders, horizontal alignment, column widths, merged cells, multiple sheets.
+- Colors: the fill and text color buttons apply the last color picked and have a menu like a desktop spreadsheet:
+  theme colors with five shades each, ten standard colors, the colors the workbook already uses (fills and text, the
+  most used first), "No fill" / "Automatic", and a custom color — "More colors…" opens the system picker (applied when
+  the user has chosen, not while dragging) or a `#RRGGBB` code can be typed. Nothing about the colors is stored outside the
+  workbook.
+- Fills: the fill of a whole column or row (`<col style>`, `<row s customFormat>`) is read, shown in the cells that do
+  not exist, and written back; choosing columns or rows by their headers and filling them sets the column's or row's
+  style (and that of the cells that exist in it) without making cells for every row; a cell typed into a filled column
+  starts filled. Fills given as theme colors (with a tint), by index, or as a gradient (its first color) are shown.
+- Resizing: drag the edge of a column header or a row header; the new size shows while the mouse is down and is one
+  step of the history when it is let go. Double-clicking the edge restores the default. Row heights (20 px, up to 546 px)
+  are read from and written to the file, and move with their rows when rows are inserted or deleted.
 - Editing: formula bar, undo/redo (100 steps), copy/cut/paste (also TSV from Excel), fill handle, find/replace,
   sort, AutoSum, insert/delete rows and columns (formulas are rewritten), multi-range selection, zoom,
   sheet tabs (add, rename, delete, drag to reorder).
@@ -93,9 +105,11 @@ The module does not warn on page unload and does not show a "discard changes?" d
 ## Known limitations
 
 Data the module does not understand is **dropped on save** (the file is rebuilt from the parsed model):
-charts, images, conditional formatting, data validation, defined names, comments, freeze panes, row heights,
-theme/indexed colors, fonts other than the default, array formulas, pivot tables, macros. Editing a file that
-relies on these will lose them; consider warning the user or offering a copy.
+charts, images, conditional formatting, data validation, defined names, comments, freeze panes,
+fonts other than the default, array formulas, pivot tables, macros. Editing a file that
+relies on these will lose them; consider warning the user or offering a copy. Theme, tinted and indexed colors (of fills
+and text) are turned into fixed `#rrggbb` colors when a file is opened, so they look the same, but they are no longer
+tied to the file's theme.
 
 ## Security notes
 
@@ -131,9 +145,10 @@ Layout:
 ```
 src/index.ts          public API (XlsxEditor, XlsxEditorProps, XlsxEditorHandle)
 src/xlsx-editor.tsx   main component (state, keyboard, clipboard, save/load lifecycle)
-src/grid.tsx          virtualized grid, selection, zoom, fill handle
+src/grid.tsx          virtualized grid (variable row heights and column widths), selection, zoom, fill handle
 src/ribbon.tsx        toolbar        src/find-bar.tsx  find/replace      src/sheet-tabs.tsx  sheet tabs
-src/lib/              framework-free logic: xlsx-io (reader/writer), zip, formula, numfmt, ops, store, types
+src/color-menu.tsx    the fill / text color menu (theme, standard, used in the workbook, custom)
+src/lib/              framework-free logic: xlsx-io (reader/writer), zip, formula, numfmt, ops, store, colors, types
 src/test/             unit tests
 demo/                 demo app for manual testing
 ```

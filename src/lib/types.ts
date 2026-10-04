@@ -34,6 +34,16 @@ export interface Sheet {
   name: string;
   rows: ((Cell | undefined)[] | undefined)[];
   colWidths: Record<number, number>;
+  /** Row heights in px at 100% where they differ from the default (20 px); keys are 0-based rows. */
+  rowHeights?: Record<number, number>;
+  /**
+   * Formatting of a whole column (a column that was filled or colored as a whole): it applies to the cells of the
+   * column that do not exist. A cell that exists carries its own complete style; an empty style `{}` on a cell
+   * means "deliberately none". Keys are 0-based columns.
+   */
+  colStyles?: Record<number, Style>;
+  /** The same for whole rows; where a row and a column both have a style, the row's wins. */
+  rowStyles?: Record<number, Style>;
   merges?: Range[];
 }
 
@@ -47,6 +57,8 @@ export interface Rect {
   c1: number;
   r2: number;
   c2: number;
+  /** Set when the rectangle is whole columns or whole rows (chosen by their headers), however many cells are shown. */
+  whole?: 'col' | 'row';
 }
 
 export interface Sel {
@@ -60,13 +72,16 @@ export interface Sel {
   noScroll?: boolean;
   /** Previously selected ranges (Ctrl+click). */
   extra?: Rect[];
+  /** The selection is whole columns or whole rows, chosen by their headers. */
+  whole?: 'col' | 'row';
 }
 
-export const selRect = (s: Sel) => ({
+export const selRect = (s: Sel): Rect => ({
   r1: Math.min(s.ar, s.fr),
   r2: Math.max(s.ar, s.fr),
   c1: Math.min(s.ac, s.fc),
   c2: Math.max(s.ac, s.fc),
+  ...(s.whole && { whole: s.whole }),
 });
 
 export const getCell = (s: Sheet, r: number, c: number): Cell | undefined => s.rows[r]?.[c];
@@ -91,3 +106,13 @@ export function intervals(rects: Rect[], axis: 'r' | 'c'): [number, number][] {
   }
   return out.reverse();
 }
+
+/**
+ * The formatting an empty cell has by inheritance: its row's style, else its column's. A cell that is typed
+ * into starts with it, as in a spreadsheet program, so a filled column stays filled.
+ */
+export const inheritedStyle = (s: Sheet, r: number, c: number): Style | undefined => {
+  const st = s.rowStyles?.[r] ?? s.colStyles?.[c];
+  return st && Object.keys(st).length ? st : undefined;
+};
+

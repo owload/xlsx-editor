@@ -44,20 +44,91 @@ function mapFormulas(b: Book, fn: (raw: string, own: string) => string): Book {
   };
 }
 
+export const DEFAULT_ROW_HEIGHT = 20;
+export const MIN_ROW_HEIGHT = 6;
+/** The tallest row of a spreadsheet program: 409 pt. */
+export const MAX_ROW_HEIGHT = 546;
+
+/** Row heights after `n` rows were inserted at `at`: rows from `at` on move down. */
+export function shiftRowHeightsForInsert(h: Record<number, number> | undefined, at: number, n: number): Record<number, number> | undefined {
+  if (!h) return h;
+  const out: Record<number, number> = {};
+  for (const [k, v] of Object.entries(h)) out[Number(k) >= at ? Number(k) + n : Number(k)] = v;
+  return out;
+}
+
+/** Row heights after `n` rows were deleted at `at`: the heights of the deleted rows go, the rows below move up. */
+export function shiftRowHeightsForDelete(h: Record<number, number> | undefined, at: number, n: number): Record<number, number> | undefined {
+  if (!h) return h;
+  const out: Record<number, number> = {};
+  for (const [k, v] of Object.entries(h)) {
+    const r = Number(k);
+    if (r < at) out[r] = v;
+    else if (r >= at + n) out[r - n] = v;
+  }
+  return out;
+}
+
+/** Sets the height of a row (px at 100%), clamped to what a row can be; undefined restores the default. */
+export function setRowHeight(b: Book, si: number, r: number, height: number | undefined): Book {
+  return mapSheet(b, si, (s) => {
+    const heights = { ...s.rowHeights };
+    const clamped = height === undefined ? undefined : Math.max(MIN_ROW_HEIGHT, Math.min(MAX_ROW_HEIGHT, Math.round(height)));
+    if (clamped === undefined || clamped === DEFAULT_ROW_HEIGHT) delete heights[r];
+    else heights[r] = clamped;
+    return { ...s, rowHeights: heights };
+  });
+}
+
+/** Sets the width of a column (px at 100%); undefined restores the default. */
+export function setColWidth(b: Book, si: number, c: number, width: number | undefined): Book {
+  return mapSheet(b, si, (s) => {
+    const widths = { ...s.colWidths };
+    if (width === undefined) delete widths[c];
+    else widths[c] = Math.max(12, Math.round(width));
+    return { ...s, colWidths: widths };
+  });
+}
+
+type ByIndex<T> = Record<number, T> | undefined;
+
+/** Per-row or per-column settings after `n` lines were inserted at `at`: lines from `at` on move by `n`. */
+export function shiftForInsert<T>(h: ByIndex<T>, at: number, n: number): ByIndex<T> {
+  if (!h) return h;
+  const out: Record<number, T> = {};
+  for (const [k, v] of Object.entries(h)) out[Number(k) >= at ? Number(k) + n : Number(k)] = v;
+  return out;
+}
+
+/** Per-row or per-column settings after `n` lines were deleted at `at`: those of the deleted lines go. */
+export function shiftForDelete<T>(h: ByIndex<T>, at: number, n: number): ByIndex<T> {
+  if (!h) return h;
+  const out: Record<number, T> = {};
+  for (const [k, v] of Object.entries(h)) {
+    const i = Number(k);
+    if (i < at) out[i] = v;
+    else if (i >= at + n) out[i - n] = v;
+  }
+  return out;
+}
+
 export function insertLines(b: Book, si: number, axis: 'r' | 'c', at: number, n: number): Book {
   const target = b.sheets[si].name;
   const moved = mapSheet(b, si, (s) => {
     if (axis === 'r') {
-      if (at >= s.rows.length) return { ...s, merges: undefined };
+      const rowHeights = shiftRowHeightsForInsert(s.rowHeights, at, n);
+      const rowStyles = shiftForInsert(s.rowStyles, at, n);
+      if (at >= s.rows.length) return { ...s, rowHeights, rowStyles, merges: undefined };
       const rows = s.rows.slice();
       rows.splice(at, 0, ...new Array<undefined>(n).fill(undefined));
-      return { ...s, rows, merges: undefined };
+      return { ...s, rows, rowHeights, rowStyles, merges: undefined };
     }
     const widths: Record<number, number> = {};
     for (const [k, w] of Object.entries(s.colWidths)) widths[Number(k) >= at ? Number(k) + n : Number(k)] = w;
     return {
       ...s,
       colWidths: widths,
+      colStyles: shiftForInsert(s.colStyles, at, n),
       merges: undefined,
       rows: s.rows.map((row) => {
         if (!row || at >= row.length) return row;
@@ -76,7 +147,7 @@ export function deleteLines(b: Book, si: number, axis: 'r' | 'c', at: number, n:
     if (axis === 'r') {
       const rows = s.rows.slice();
       rows.splice(at, n);
-      return { ...s, rows, merges: undefined };
+      return { ...s, rows, rowHeights: shiftRowHeightsForDelete(s.rowHeights, at, n), rowStyles: shiftForDelete(s.rowStyles, at, n), merges: undefined };
     }
     const widths: Record<number, number> = {};
     for (const [k, w] of Object.entries(s.colWidths)) {
@@ -87,6 +158,7 @@ export function deleteLines(b: Book, si: number, axis: 'r' | 'c', at: number, n:
     return {
       ...s,
       colWidths: widths,
+      colStyles: shiftForDelete(s.colStyles, at, n),
       merges: undefined,
       rows: s.rows.map((row) => {
         if (!row) return row;

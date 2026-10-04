@@ -4,6 +4,8 @@ import { usedSize } from './types';
 import { decodeAddr, encodeAddr, encodeCol, decodeCol } from './addr';
 import { createEvaluator, isErr, parseLiteral } from './formula';
 import { BUILTIN_FMT } from './numfmt';
+import { parseThemeColors, resolveColor } from './ooxml-colors';
+import { DEFAULT_ROW_HEIGHT, MAX_ROW_HEIGHT, MIN_ROW_HEIGHT } from './store';
 import { unzip, zip } from './zip';
 
 const ERR_CODES = ['#DIV/0!', '#VALUE!', '#REF!', '#NAME?', '#NUM!', '#N/A'];
@@ -66,10 +68,22 @@ export async function readWorkbook(buf: ArrayBuffer | Uint8Array): Promise<Book>
       numFmts.set(Number(nf.getAttribute('numFmtId')), nf.getAttribute('formatCode') ?? '');
     }
     const flag = (el: Element | undefined) => !!el && !['0', 'false'].includes(el.getAttribute('val') ?? '1');
-    const rgb = (el: Element | undefined) => {
-      const v = el?.getAttribute('rgb') ?? '';
-      return /^[0-9A-Fa-f]{8}$/.test(v) ? '#' + v.slice(2).toLowerCase() : undefined;
-    };
+    // Colors may be stated as RGB, as a theme color with a tint, or by an index into the old palette.
+    const themePart = [...files.keys()].find((k) => /^xl\/theme\/[^/]+\.xml$/.test(k));
+    let themeDoc: Document | null = null;
+    try {
+      themeDoc = themePart ? xml(files.get(themePart), themePart) : null;
+    } catch {
+      themeDoc = null; // an unreadable theme only means the default colors are used
+    }
+    const theme = parseThemeColors(themeDoc);
+    const rgb = (el: Element | undefined | null) =>
+      el
+        ? resolveColor(
+            { rgb: el.getAttribute('rgb'), theme: el.getAttribute('theme'), tint: el.getAttribute('tint'), indexed: el.getAttribute('indexed') },
+            theme,
+          )
+        : undefined;
     const fonts = kids(kid(st, 'fonts'), 'font').map((f) => {
       const o: Style = {};
       if (flag(kid(f, 'b'))) o.b = true;
@@ -83,7 +97,10 @@ export async function readWorkbook(buf: ArrayBuffer | Uint8Array): Promise<Book>
     });
     const fills = kids(kid(st, 'fills'), 'fill').map((f) => {
       const pf = kid(f, 'patternFill');
-      return pf?.getAttribute('patternType') === 'solid' ? rgb(kid(pf, 'fgColor')) : undefined;
+      if (pf) return pf.getAttribute('patternType') === 'solid' ? rgb(kid(pf, 'fgColor')) : undefined;
+      // A gradient is shown in the color it starts with.
+      const first = kid(kid(f, 'gradientFill'), 'stop');
+      return rgb(kid(first, 'color'));
     });
     const borders = kids(kid(st, 'borders'), 'border').map((b) => !!kid(b, 'left')?.getAttribute('style') && !!kid(b, 'bottom')?.getAttribute('style'));
     for (const xf of kids(kid(st, 'cellXfs'), 'xf')) {
@@ -111,6 +128,9 @@ export async function readWorkbook(buf: ArrayBuffer | Uint8Array): Promise<Book>
       const min = Number(col.getAttribute('min'));
       const max = Math.min(Number(col.getAttribute('max')), min + 500);
       if (w > 0 && min > 0) for (let c = min; c <= max; c++) sheet.colWidths[c - 1] = Math.round(w * 7 + 5);
+      // A column that was filled or formatted as a whole: the cells that do not exist have this style.
+      const colStyle = xfs[Number(col.getAttribute('style') ?? 0)]?.st;
+      if (colStyle && min > 0) for (let c = min; c <= max; c++) (sheet.colStyles ??= {})[c - 1] = colStyle;
     }
     const merges: Range[] = [];
     for (const mc of kids(kid(ws, 'mergeCells'), 'mergeCell')) {
@@ -124,6 +144,15 @@ export async function readWorkbook(buf: ArrayBuffer | Uint8Array): Promise<Book>
     let rowIdx = -1;
     for (const row of kids(kid(ws, 'sheetData'), 'row')) {
       rowIdx = row.hasAttribute('r') ? Number(row.getAttribute('r')) - 1 : rowIdx + 1;
+      // A row height is in points; 15 pt is the default row, 20 px. Rows that Excel sized to their text
+      // (no customHeight) are kept at that height too, so large text is not cut off.
+      const rowStyle = ['1', 'true'].includes(row.getAttribute('customFormat') ?? '') ? xfs[Number(row.getAttribute('s') ?? 0)]?.st : undefined;
+      if (rowStyle && rowIdx >= 0 && rowIdx <= 1_048_575) (sheet.rowStyles ??= {})[rowIdx] = rowStyle;
+      const ht = Number(row.getAttribute('ht'));
+      if (ht > 0 && rowIdx >= 0 && rowIdx <= 1_048_575) {
+        const px = Math.max(MIN_ROW_HEIGHT, Math.min(MAX_ROW_HEIGHT, Math.round((ht * 4) / 3)));
+        if (px !== DEFAULT_ROW_HEIGHT) (sheet.rowHeights ??= {})[rowIdx] = px;
+      }
       let colIdx = -1;
       for (const c of kids(row, 'c')) {
         const a = decodeAddr(c.getAttribute('r') ?? '');
@@ -142,11 +171,15 @@ export async function readWorkbook(buf: ArrayBuffer | Uint8Array): Promise<Book>
         else if (t === 'b') raw = v === '1' ? 'TRUE' : 'FALSE';
         else raw = v;
         const xf = xfs[Number(c.getAttribute('s') ?? 0)];
-        if (raw === '' && !xf?.st) continue;
+        // A cell with no formatting of its own in a styled row or column is kept (with an empty style) even
+        // when it is empty: Excel shows it unformatted, not with the row's or column's formatting.
+        const inherited = sheet.rowStyles?.[r] ?? sheet.colStyles?.[colIdx];
+        if (raw === '' && !xf?.st && !inherited) continue;
         if (!f && (t === 's' || t === 'inlineStr' || t === 'str') && typeof parseLiteral(raw) !== 'string') text = true;
         const cell: Cell = { raw };
         if (xf?.z) cell.z = xf.z;
         if (xf?.st) cell.st = xf.st;
+        else if (inherited) cell.st = {};
         if (text) cell.text = true;
         (sheet.rows[r] ??= [])[colIdx] = cell;
       }
@@ -223,19 +256,31 @@ export async function writeWorkbook(book: Book): Promise<Uint8Array> {
   const sheetXml = book.sheets.map((s, si) => {
     const { cols } = usedSize(s);
     let out = `${HEAD}<worksheet ${NS}>`;
-    const widths = Object.entries(s.colWidths).filter(([k]) => Number(k) < Math.max(cols, 1) + 1000);
-    if (widths.length) {
+    const limit = Math.max(cols, 1) + 1000;
+    const colIndexes = new Set<number>();
+    for (const k of Object.keys(s.colWidths)) if (Number(k) < limit) colIndexes.add(Number(k));
+    for (const k of Object.keys(s.colStyles ?? {})) if (Number(k) < limit) colIndexes.add(Number(k));
+    if (colIndexes.size) {
       out += '<cols>';
-      for (const [k, w] of widths.sort((a, b) => Number(a[0]) - Number(b[0]))) {
-        out += `<col min="${Number(k) + 1}" max="${Number(k) + 1}" width="${Math.max(0, (w - 5) / 7).toFixed(2)}" customWidth="1"/>`;
+      for (const k of [...colIndexes].sort((a, b) => a - b)) {
+        const w = s.colWidths[k];
+        const st = s.colStyles?.[k];
+        const style = st ? styleIdx({ raw: '', st }) : 0;
+        // A column that only has a style gets the editor's default width, so it looks the same here and there.
+        const width = w !== undefined ? `width="${Math.max(0, (w - 5) / 7).toFixed(2)}" customWidth="1"` : 'width="9.57"';
+        out += `<col min="${k + 1}" max="${k + 1}" ${width}${style ? ` style="${style}"` : ''}/>`;
       }
       out += '</cols>';
     }
     out += '<sheetData>';
-    s.rows.forEach((row, r) => {
-      if (!row) return;
+    const heights = s.rowHeights ?? {};
+    const rowIndexes = new Set<number>([...s.rows.keys()].filter((r) => s.rows[r]));
+    for (const k of Object.keys(heights)) if (Number(k) <= 1_048_575) rowIndexes.add(Number(k));
+    for (const k of Object.keys(s.rowStyles ?? {})) if (Number(k) <= 1_048_575) rowIndexes.add(Number(k));
+    [...rowIndexes].sort((a, b) => a - b).forEach((r) => {
+      const row = s.rows[r];
       let cells = '';
-      row.forEach((cell, c) => {
+      row?.forEach((cell, c) => {
         if (!cell || (cell.raw === '' && !cell.st)) return;
         const ref = encodeAddr(r, c);
         const si2 = styleIdx(cell);
@@ -261,7 +306,12 @@ export async function writeWorkbook(book: Book): Promise<Uint8Array> {
         else if (isErr(v)) cells += `<c r="${ref}"${style} t="e"><v>${esc(v.err)}</v></c>`;
         else cells += `<c r="${ref}"${style} t="inlineStr"><is><t xml:space="preserve">${esc(String(v))}</t></is></c>`;
       });
-      if (cells) out += `<row r="${r + 1}">${cells}</row>`;
+      const px = heights[r];
+      const height = px ? ` ht="${((px * 3) / 4).toFixed(2)}" customHeight="1"` : '';
+      const rs = s.rowStyles?.[r];
+      const rowStyle = rs && styleIdx({ raw: '', st: rs });
+      const format = rowStyle ? ` s="${rowStyle}" customFormat="1"` : '';
+      if (cells || height || format) out += `<row r="${r + 1}"${format}${height}>${cells}</row>`;
     });
     out += '</sheetData>';
     if (s.merges?.length) {

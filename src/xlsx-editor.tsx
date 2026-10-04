@@ -8,7 +8,8 @@ import { SheetTabs } from './sheet-tabs';
 import { autosum, changeDecimals, clearContents, fillRange, findNext, norm, patchStyle, replaceAll, replaceAt, setFormat, sortRows } from './lib/ops';
 import type { Dir } from './lib/ops';
 import type { Book, Cell, Sel, Style } from './lib/types';
-import { getCell, intervals, selRect, selRects, usedSize } from './lib/types';
+import { getCell, inheritedStyle, intervals, selRect, selRects, usedSize } from './lib/types';
+import { collectUsedColors } from './lib/colors';
 import { createEvaluator, display, isErr, parseLiteral } from './lib/formula';
 import {
   addSheet,
@@ -22,6 +23,8 @@ import {
   reducer,
   renameSheet,
   setCells,
+  setColWidth,
+  setRowHeight,
 } from './lib/store';
 import { readWorkbook, writeWorkbook } from './lib/xlsx-io';
 import { encodeAddr } from './lib/addr';
@@ -80,9 +83,12 @@ const editText = (cell?: Cell) => {
   return cell.text && typeof parseLiteral(cell.raw) !== 'string' ? "'" + cell.raw : cell.raw;
 };
 
-function toCell(value: string, prev?: Cell): Cell | undefined {
+function toCell(value: string, prev?: Cell, inherited?: Style): Cell | undefined {
   const v = value.slice(0, MAX_CELL_CHARS);
-  const keep = { ...(prev?.z && { z: prev.z }), ...(prev?.st && { st: prev.st }) };
+  // A cell that does not exist starts with the formatting of its row or column; one that exists keeps its own
+  // (an empty style, if it has none in a styled row or column, so that their formatting does not appear in it).
+  const st = prev ? (prev.st ?? (inherited ? {} : undefined)) : inherited;
+  const keep = { ...(prev?.z && { z: prev.z }), ...(st && { st }) };
   if (v[0] === "'") return { raw: v.slice(1), text: true, ...keep };
   return norm({ raw: v, ...keep });
 }
@@ -122,6 +128,7 @@ export function XlsxEditor({
   const si = book.active;
   const sheet = book.sheets[si];
   const ev = useMemo(() => createEvaluator(book), [book]);
+  const usedColors = useMemo(() => collectUsedColors(book), [book]);
   const dirty = isDirty(h);
 
   const fail = (e: unknown, fallback: string) => {
@@ -181,7 +188,7 @@ export function XlsxEditor({
       if (editing) {
         const prev = getCell(sheet, editing.r, editing.c);
         if (editing.value !== editText(prev)) {
-          toWrite = setCells(book, si, [{ r: editing.r, c: editing.c, cell: toCell(editing.value, prev) }]);
+          toWrite = setCells(book, si, [{ r: editing.r, c: editing.c, cell: toCell(editing.value, prev, inheritedStyle(sheet, editing.r, editing.c)) }]);
           rev += 1;
         }
         applyEdit(editing);
@@ -209,7 +216,7 @@ export function XlsxEditor({
   const applyEdit = (ed: Editing) => {
     const prev = getCell(sheet, ed.r, ed.c);
     if (ed.value === editText(prev)) return;
-    dispatch({ type: 'commit', fn: (b) => setCells(b, si, [{ r: ed.r, c: ed.c, cell: toCell(ed.value, prev) }]) });
+    dispatch({ type: 'commit', fn: (b) => setCells(b, si, [{ r: ed.r, c: ed.c, cell: toCell(ed.value, prev, inheritedStyle(sheet, ed.r, ed.c)) }]) });
   };
   const flush = () => {
     if (!editing) return;
@@ -470,6 +477,7 @@ export function XlsxEditor({
         fileName={fileName}
         dirty={dirty}
         saving={saving}
+        usedColors={usedColors}
         onClose={onClose}
         a={{
           save: () => void save(),
@@ -559,12 +567,8 @@ export function XlsxEditor({
         onEditKey={onEditKey}
         onStartEdit={() => startEdit()}
         onFill={onFill}
-        onColWidth={(c, w) =>
-          dispatch({
-            type: 'silent',
-            fn: (b) => ({ ...b, sheets: b.sheets.map((s, i) => (i === si ? { ...s, colWidths: { ...s.colWidths, [c]: w } } : s)) }),
-          })
-        }
+        onColWidth={(c, w) => act((b) => setColWidth(b, si, c, w))}
+        onRowHeight={(r, h) => act((b) => setRowHeight(b, si, r, h))}
         onKeyDown={onKeyDown}
         onBeforeInput={(e) => {
           const data = (e.nativeEvent as InputEvent).data;

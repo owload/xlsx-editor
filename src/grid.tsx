@@ -7,6 +7,7 @@ import { display, isErr } from './lib/formula';
 import type { Evaluator } from './lib/formula';
 import { encodeCol } from './lib/addr';
 import type { Dir } from './lib/ops';
+import { DEFAULT_ROW_HEIGHT, MAX_ROW_HEIGHT, MIN_ROW_HEIGHT } from './lib/store';
 
 /** Sizes at 100% zoom, Excel-like: 20 px rows, 72 px columns. */
 const BASE_RH = 20;
@@ -32,7 +33,10 @@ interface Props {
   onEditKey: (e: KeyboardEvent) => void;
   onStartEdit: () => void;
   onFill: (dir: Dir, count: number) => void;
-  onColWidth: (c: number, w: number) => void;
+  /** Called once, when the user lets go of the edge of a column header; undefined means the default width. */
+  onColWidth: (c: number, w: number | undefined) => void;
+  /** Called once, when the user lets go of the edge of a row header; undefined means the default height. */
+  onRowHeight: (r: number, h: number | undefined) => void;
   onKeyDown: (e: KeyboardEvent) => void;
   onBeforeInput: (e: React.FormEvent<HTMLDivElement>) => void;
   onCopy: (e: ClipboardEvent, cut: boolean) => void;
@@ -47,7 +51,13 @@ export function Grid(p: Props) {
   const RH = Math.max(6, Math.round(BASE_RH * zoom));
   const HH = RH;
   const RHW = Math.max(16, Math.round(BASE_RHW * zoom));
-  const colW = (c: number) => Math.max(2, Math.round((sheet.colWidths[c] ?? BASE_W) * zoom));
+  // A column or row that is being resized: shown at its new size while the mouse is down, and only then
+  // written to the workbook (one step of the history, and the document becomes changed).
+  const [drag, setDrag] = useState<{ axis: 'col' | 'row'; index: number; size: number } | null>(null);
+  const colW = (c: number) =>
+    Math.max(2, Math.round(((drag?.axis === 'col' && drag.index === c ? drag.size : sheet.colWidths[c]) ?? BASE_W) * zoom));
+  const rowH = (r: number) =>
+    Math.max(2, Math.round(((drag?.axis === 'row' && drag.index === r ? drag.size : sheet.rowHeights?.[r]) ?? DEFAULT_ROW_HEIGHT) * zoom));
   const scroller = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const [scroll, setScroll] = useState({ x: 0, y: 0, w: 800, h: 600 });
@@ -64,9 +74,16 @@ export function Grid(p: Props) {
     for (let c = 0; c < nCols; c++) o[c + 1] = o[c] + colW(c);
     return o;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sheet.colWidths, nCols, zoom]);
+  }, [sheet.colWidths, nCols, zoom, drag]);
+  const roffs = useMemo(() => {
+    const o = new Array<number>(nRows + 1);
+    o[0] = 0;
+    for (let r = 0; r < nRows; r++) o[r + 1] = o[r] + rowH(r);
+    return o;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheet.rowHeights, nRows, zoom, drag]);
   const totalW = offs[nCols];
-  const totalH = nRows * RH;
+  const totalH = roffs[nRows];
 
   useEffect(() => {
     const el = scroller.current;
@@ -82,14 +99,15 @@ export function Grid(p: Props) {
   useEffect(() => {
     const el = scroller.current;
     if (!el || sel.noScroll) return;
-    const top = sel.fr * RH;
+    const top = roffs[sel.fr] ?? 0;
+    const bottom = roffs[sel.fr + 1] ?? top;
     if (top < el.scrollTop) el.scrollTop = top;
-    else if (top + RH > el.scrollTop + el.clientHeight) el.scrollTop = top + RH - el.clientHeight;
+    else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = bottom - el.clientHeight;
     const left = offs[sel.fc] ?? 0;
     const right = offs[sel.fc + 1] ?? left;
     if (left < el.scrollLeft) el.scrollLeft = left;
     else if (right > el.scrollLeft + el.clientWidth) el.scrollLeft = right - el.clientWidth;
-  }, [sel.fr, sel.fc, sel.noScroll, offs, RH]);
+  }, [sel.fr, sel.fc, sel.noScroll, offs, roffs]);
 
   const prevZoom = useRef(zoom);
   useLayoutEffect(() => {
@@ -127,10 +145,20 @@ export function Grid(p: Props) {
     }
     return lo;
   };
+  const rowAt = (y: number) => {
+    let lo = 0;
+    let hi = nRows - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (roffs[mid] <= y) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo;
+  };
   const cellAt = (e: { clientX: number; clientY: number }) => {
     const rect = content.current!.getBoundingClientRect();
     return {
-      r: Math.min(nRows - 1, Math.max(0, Math.floor((e.clientY - rect.top) / RH))),
+      r: rowAt(Math.max(0, e.clientY - rect.top)),
       c: colAt(Math.max(0, e.clientX - rect.left)),
     };
   };
@@ -157,23 +185,40 @@ export function Grid(p: Props) {
     window.addEventListener('mouseup', up);
   };
 
-  const startResize = (c: number, e: React.MouseEvent) => {
+  /** Resizing a column or a row by its header edge: live while the mouse is down, one change when it is let go. */
+  const startResize = (axis: 'col' | 'row', index: number, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const x0 = e.clientX;
-    const w0 = sheet.colWidths[c] ?? BASE_W;
-    const move = (ev: MouseEvent) => p.onColWidth(c, Math.max(MIN_W, Math.round(w0 + (ev.clientX - x0) / zoom)));
+    const start = axis === 'col' ? e.clientX : e.clientY;
+    const size0 = (axis === 'col' ? sheet.colWidths[index] : sheet.rowHeights?.[index]) ?? (axis === 'col' ? BASE_W : DEFAULT_ROW_HEIGHT);
+    const [min, max] = axis === 'col' ? [MIN_W, 100_000] : [MIN_ROW_HEIGHT, MAX_ROW_HEIGHT];
+    let size = size0;
+    const move = (ev: MouseEvent) => {
+      size = Math.min(max, Math.max(min, Math.round(size0 + ((axis === 'col' ? ev.clientX : ev.clientY) - start) / zoom)));
+      setDrag({ axis, index, size });
+    };
     const up = () => {
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
+      setDrag(null);
+      if (size === size0) return;
+      if (axis === 'col') p.onColWidth(index, size);
+      else p.onRowHeight(index, size);
     };
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
   };
+  /** Double-clicking the edge puts a column or row back to its default size. */
+  const resetSize = (axis: 'col' | 'row', index: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (axis === 'col') p.onColWidth(index, undefined);
+    else p.onRowHeight(index, undefined);
+  };
 
   const { r1, r2, c1, c2 } = selRect(sel);
-  const rStart = Math.max(0, Math.floor(scroll.y / RH) - 3);
-  const rEnd = Math.min(nRows, Math.ceil((scroll.y + scroll.h) / RH) + 3);
+  const rStart = Math.max(0, rowAt(scroll.y) - 3);
+  const rEnd = Math.min(nRows, rowAt(scroll.y + scroll.h) + 4);
   const cStart = Math.max(0, colAt(scroll.x) - 1);
   const cEnd = Math.min(nCols, colAt(scroll.x + scroll.w) + 2);
   const rowsInView = Array.from({ length: Math.max(0, rEnd - rStart) }, (_, i) => rStart + i);
@@ -189,7 +234,7 @@ export function Grid(p: Props) {
       const v = p.ev.value(p.si, r, c);
       const cls = typeof v === 'number' ? 'xe-cell xe-num' : isErr(v) ? 'xe-cell xe-err' : typeof v === 'boolean' ? 'xe-cell xe-ctr' : 'xe-cell';
       const st = cell.st;
-      const style: React.CSSProperties = { left: offs[c], top: r * RH, width: offs[c + 1] - offs[c], height: RH };
+      const style: React.CSSProperties = { left: offs[c], top: roffs[r], width: offs[c + 1] - offs[c], height: roffs[r + 1] - roffs[r], lineHeight: roffs[r + 1] - roffs[r] + 'px' };
       if (st) {
         if (st.b) style.fontWeight = 700;
         if (st.i) style.fontStyle = 'italic';
@@ -200,6 +245,8 @@ export function Grid(p: Props) {
         if (st.h) style.textAlign = st.h;
         if (st.bd) style.boxShadow = 'inset 0 0 0 1px #000';
       }
+      // A cell that exists is shown with its own formatting only: in a filled column or row it covers the fill.
+      if (!style.background && (sheet.rowStyles?.[r]?.bg || sheet.colStyles?.[c]?.bg)) style.background = 'var(--bg)';
       return [
         <div key={r * 20000 + c} className={cls} style={style}>
           {display(v, cell.z)}
@@ -221,8 +268,8 @@ export function Grid(p: Props) {
     const extra: Rect[] | undefined = additive ? rects : e.shiftKey ? sel.extra : undefined;
     const whole = (a: number, b: number): Sel =>
       kind === 'col'
-        ? { ar: 0, ac: a, fr: nRows - 1, fc: b, noScroll: true, extra }
-        : { ar: a, ac: 0, fr: b, fc: nCols - 1, noScroll: true, extra };
+        ? { ar: 0, ac: a, fr: nRows - 1, fc: b, noScroll: true, extra, whole: 'col' }
+        : { ar: a, ac: 0, fr: b, fc: nCols - 1, noScroll: true, extra, whole: 'row' };
     const anchor = e.shiftKey && !additive ? (kind === 'col' ? sel.ac : sel.ar) : idx;
     p.onSelect(whole(anchor, idx));
     const move = (ev: MouseEvent) => {
@@ -240,17 +287,31 @@ export function Grid(p: Props) {
   const colHeads = colsInView.map((c) => (
       <div key={c} className={'xe-hd' + (colOn(c) ? ' xe-on' : '')} style={{ left: offs[c], width: offs[c + 1] - offs[c] }} onMouseDown={(e) => startHeader('col', c, e)}>
         {encodeCol(c)}
-        <span className="xe-grip" onMouseDown={(e) => startResize(c, e)} />
+        <span className="xe-grip" onMouseDown={(e) => startResize('col', c, e)} onDoubleClick={(e) => resetSize('col', c, e)} />
       </div>
   ));
   const rowHeads = rowsInView.map((r) => (
-      <div key={r} className={'xe-hd' + (rowOn(r) ? ' xe-on' : '')} style={{ top: r * RH, height: RH, width: RHW }} onMouseDown={(e) => startHeader('row', r, e)}>
+      <div key={r} className={'xe-hd' + (rowOn(r) ? ' xe-on' : '')} style={{ top: roffs[r], height: roffs[r + 1] - roffs[r], width: RHW }} onMouseDown={(e) => startHeader('row', r, e)}>
         {r + 1}
+        <span className="xe-rgrip" onMouseDown={(e) => startResize('row', r, e)} onDoubleClick={(e) => resetSize('row', r, e)} />
       </div>
   ));
 
-  // vertical grid lines (horizontal ones are drawn by the .content background)
+  // The fill of a whole column or row shows in the cells that do not exist; a row's wins over a column's.
+  const fills = [
+    ...colsInView.flatMap((c) => {
+      const bg = sheet.colStyles?.[c]?.bg;
+      return bg ? [<div key={'c' + c} className="xe-fill" style={{ left: offs[c], top: 0, width: offs[c + 1] - offs[c], height: totalH, background: bg }} />] : [];
+    }),
+    ...rowsInView.flatMap((r) => {
+      const bg = sheet.rowStyles?.[r]?.bg;
+      return bg ? [<div key={'r' + r} className="xe-fill" style={{ left: 0, top: roffs[r], width: totalW, height: roffs[r + 1] - roffs[r], background: bg }} />] : [];
+    }),
+  ];
+
+  // grid lines
   const vlines = colsInView.map((c) => <div key={c} className="xe-vline" style={{ left: offs[c + 1] - 1, height: totalH }} />);
+  const hlines = rowsInView.map((r) => <div key={r} className="xe-hline" style={{ top: roffs[r + 1] - 1, width: totalW }} />);
 
   const startFill = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -280,9 +341,9 @@ export function Grid(p: Props) {
     window.addEventListener('mouseup', up);
   };
 
-  const box = (x: Rect) => ({ left: offs[x.c1], top: x.r1 * RH, width: offs[x.c2 + 1] - offs[x.c1], height: (x.r2 - x.r1 + 1) * RH });
+  const box = (x: Rect) => ({ left: offs[x.c1], top: roffs[x.r1], width: offs[x.c2 + 1] - offs[x.c1], height: roffs[x.r2 + 1] - roffs[x.r1] });
   const rect = box({ r1, c1, r2, c2 });
-  const act = { left: offs[sel.ac], top: sel.ar * RH, width: offs[sel.ac + 1] - offs[sel.ac], height: RH };
+  const act = { left: offs[sel.ac], top: roffs[sel.ar], width: offs[sel.ac + 1] - offs[sel.ac], height: roffs[sel.ar + 1] - roffs[sel.ar] };
 
   return (
     <div
@@ -313,7 +374,9 @@ export function Grid(p: Props) {
         }}
       >
         <div ref={content} className="xe-content" style={{ width: totalW, height: totalH }} onMouseDown={onMouseDown} onDoubleClick={p.onStartEdit}>
+          {hlines}
           {vlines}
+          {fills}
           {cells}
           {rects.map((x, i) => (
             <div key={i} className="xe-selrect" style={box(x)} />
@@ -323,9 +386,9 @@ export function Grid(p: Props) {
               className="xe-fillrect"
               style={{
                 left: offs[fill.dir === 'left' ? c1 - fill.count : c1],
-                top: (fill.dir === 'up' ? r1 - fill.count : r1) * RH,
+                top: roffs[fill.dir === 'up' ? r1 - fill.count : r1],
                 width: offs[fill.dir === 'right' ? c2 + 1 + fill.count : c2 + 1] - offs[fill.dir === 'left' ? c1 - fill.count : c1],
-                height: ((fill.dir === 'down' ? r2 + fill.count : r2) - (fill.dir === 'up' ? r1 - fill.count : r1) + 1) * RH,
+                height: roffs[(fill.dir === 'down' ? r2 + fill.count : r2) + 1] - roffs[fill.dir === 'up' ? r1 - fill.count : r1],
               }}
             />
           )}
@@ -336,7 +399,7 @@ export function Grid(p: Props) {
               className="xe-editor"
               autoFocus
               spellCheck={false}
-              style={{ left: offs[editing.c], top: editing.r * RH, width: offs[editing.c + 1] - offs[editing.c], height: RH }}
+              style={{ left: offs[editing.c], top: roffs[editing.r], width: offs[editing.c + 1] - offs[editing.c], height: roffs[editing.r + 1] - roffs[editing.r] }}
               value={editing.value}
               onChange={(e) => p.onEditChange(e.target.value)}
               onKeyDown={(e) => {

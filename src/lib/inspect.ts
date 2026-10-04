@@ -2,8 +2,8 @@ import { unzip } from './zip';
 
 /**
  * What saving a workbook with this editor would drop. The editor rebuilds the file from the data it
- * understands (values, formulas, number formats, basic cell formatting, column widths, merged cells,
- * sheets), so everything else in the file is lost; this lists the notable things that are there.
+ * understands (values, formulas, number formats, basic cell formatting, column widths, row heights, merged
+ * cells, sheets), so everything else in the file is lost; this lists the notable things that are there.
  * It only reads the file and applies the same size limits as opening it.
  *
  * Plain fonts and other cosmetic details are not listed: nearly every file has them, and a note
@@ -50,7 +50,6 @@ const RULES: Rule[] = [
   { id: 'conditionalFormatting', label: 'Conditional formatting', test: (_n, t) => inSheets(t.sheets, /<conditionalFormatting[\s>]/) },
   { id: 'dataValidation', label: 'Data validation', test: (_n, t) => inSheets(t.sheets, /<dataValidations[\s>]/) },
   { id: 'freezePanes', label: 'Frozen panes', test: (_n, t) => inSheets(t.sheets, /<pane\b[^>]*\b(xSplit|ySplit)=/) },
-  { id: 'rowHeights', label: 'Row heights', test: (_n, t) => inSheets(t.sheets, /<row\b[^>]*\bcustomHeight=["']?(1|true)/) },
   { id: 'hyperlinks', label: 'Hyperlinks', test: (_n, t) => inSheets(t.sheets, /<hyperlinks[\s>]/) },
   { id: 'filters', label: 'Filters', test: (_n, t) => inSheets(t.sheets, /<autoFilter[\s>]/) },
   { id: 'protection', label: 'Sheet protection', test: (_n, t) => inSheets(t.sheets, /<sheetProtection[\s>]/) },
@@ -72,7 +71,6 @@ const RULES: Rule[] = [
       inSheets(t.sheets, /<(row|col)\b[^>]*\bhidden=["']?(1|true)/),
   },
   { id: 'definedNames', label: 'Named ranges', test: (_n, t) => /<definedName[\s>]/.test(t.workbook) },
-  { id: 'themeColors', label: 'Theme colors', test: (_n, t) => /<(color|fgColor|bgColor)\b[^>]*\btheme=/.test(t.styles) },
   { id: 'richText', label: 'Formatting inside cells', test: (_n, t) => /<r[\s>]/.test(t.strings) },
 ];
 

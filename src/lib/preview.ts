@@ -46,7 +46,9 @@ export interface SheetPreviewLayout {
   /** PNG pixels per layout unit. */
   scale: number;
   columns: { label: string; x: number; w: number }[];
-  rows: { label: string; y: number }[];
+  rows: { label: string; y: number; h: number }[];
+  /** Fills of whole columns and rows, behind the cells. */
+  fills: { x: number; y: number; w: number; h: number; color: string }[];
   cells: PreviewCell[];
 }
 
@@ -74,7 +76,26 @@ export function layoutSheetPreview(book: Book, si: number, size: number): SheetP
     x += w;
   }
   const rows: SheetPreviewLayout['rows'] = [];
-  for (let r = 0, y = HEAD_H; y + ROW_H <= VIEW_H && r < 100; r++, y += ROW_H) rows.push({ label: String(r + 1), y });
+  for (let r = 0, y = HEAD_H; r < 100; r++) {
+    const h = sheet.rowHeights?.[r] ?? ROW_H;
+    if (y + h > VIEW_H) break;
+    rows.push({ label: String(r + 1), y, h });
+    y += h;
+  }
+
+  // A filled column or row shows in the cells that do not exist; a row's fill is over a column's.
+  const lastRow = rows[rows.length - 1];
+  const bottom = lastRow ? lastRow.y + lastRow.h : HEAD_H;
+  const fills: SheetPreviewLayout['fills'] = [];
+  for (const col of columns) {
+    const color = sheet.colStyles?.[columns.indexOf(col)]?.bg;
+    if (color) fills.push({ x: col.x, y: HEAD_H, w: col.w, h: bottom - HEAD_H, color });
+  }
+  const rightEdge = columns.length ? columns[columns.length - 1].x + columns[columns.length - 1].w : HEAD_W;
+  rows.forEach((row, r) => {
+    const color = sheet.rowStyles?.[r]?.bg;
+    if (color) fills.push({ x: HEAD_W, y: row.y, w: rightEdge - HEAD_W, h: row.h, color });
+  });
 
   const cells: PreviewCell[] = [];
   for (const row of rows.keys()) {
@@ -89,19 +110,20 @@ export function layoutSheetPreview(book: Book, si: number, size: number): SheetP
         x: col.x,
         y: rows[row].y,
         w: col.w,
-        h: ROW_H,
+        h: rows[row].h,
         text: fit(display(v, cell.z), col.w, fontPx),
         align: st?.h ?? (typeof v === 'number' ? 'right' : error || typeof v === 'boolean' ? 'center' : 'left'),
         bold: !!st?.b,
         italic: !!st?.i,
         fontPx,
         color: error ? '#d1242f' : st?.color,
-        bg: st?.bg,
+        // A cell that exists is shown with its own formatting only: in a filled column or row it covers the fill.
+        bg: st?.bg ?? (sheet.rowStyles?.[row]?.bg || sheet.colStyles?.[c]?.bg ? '#ffffff' : undefined),
         error,
       });
     }
   }
-  return { width, height, scale, columns, rows, cells };
+  return { width, height, scale, columns, rows, fills, cells };
 }
 
 const FONT = 'Calibri, Carlito, "Segoe UI", system-ui, sans-serif';
@@ -129,7 +151,11 @@ export async function renderSheetPreview(
   g.fillStyle = '#f6f8fa';
   g.fillRect(0, 0, VIEW_W, HEAD_H);
   g.fillRect(0, 0, HEAD_W, VIEW_H);
-  // Cell fills
+  // Fills of whole columns and rows, then of cells
+  for (const f of layout.fills) {
+    g.fillStyle = f.color;
+    g.fillRect(f.x, f.y, f.w, f.h);
+  }
   for (const cell of cells) {
     if (!cell.bg) continue;
     g.fillStyle = cell.bg;
@@ -139,6 +165,8 @@ export async function renderSheetPreview(
   g.fillStyle = '#d8dee4';
   for (const col of columns) g.fillRect(col.x, 0, 1, VIEW_H);
   for (const row of rows) g.fillRect(0, row.y, VIEW_W, 1);
+  const last = rows[rows.length - 1];
+  if (last) g.fillRect(0, last.y + last.h, VIEW_W, 1);
   g.fillRect(0, HEAD_H, VIEW_W, 1);
   g.fillRect(HEAD_W, 0, 1, VIEW_H);
 
@@ -147,7 +175,7 @@ export async function renderSheetPreview(
   g.font = `${FONT_PX - 1}px ${FONT}`;
   g.textAlign = 'center';
   for (const col of columns) g.fillText(col.label, col.x + col.w / 2, HEAD_H / 2);
-  for (const row of rows) g.fillText(row.label, HEAD_W / 2, row.y + ROW_H / 2);
+  for (const row of rows) g.fillText(row.label, HEAD_W / 2, row.y + row.h / 2);
 
   for (const cell of cells) {
     g.fillStyle = cell.color ?? '#1f2328';

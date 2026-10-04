@@ -53,7 +53,6 @@ describe('inspectWorkbook', () => {
     ['conditionalFormatting', '<conditionalFormatting sqref="A1"><cfRule/></conditionalFormatting><sheetData/>'],
     ['dataValidation', '<sheetData/><dataValidations count="1"><dataValidation/></dataValidations>'],
     ['freezePanes', '<sheetViews><sheetView><pane xSplit="1" ySplit="1" state="frozen"/></sheetView></sheetViews><sheetData/>'],
-    ['rowHeights', '<sheetData><row r="1" ht="30" customHeight="1"/></sheetData>'],
     ['hyperlinks', '<sheetData/><hyperlinks><hyperlink ref="A1"/></hyperlinks>'],
     ['filters', '<sheetData/><autoFilter ref="A1:B2"/>'],
     ['protection', '<sheetData/><sheetProtection sheet="1"/>'],
@@ -65,14 +64,16 @@ describe('inspectWorkbook', () => {
     expect(await ids(await file(sheet(inner)))).toEqual([id]);
   });
 
-  test('ordinary row attributes are not reported', async () => {
+  test('ordinary row attributes are not reported, and neither are row heights, which the editor keeps', async () => {
     expect(await ids(await file(sheet('<sheetData><row r="1" ht="15" spans="1:2"/></sheetData>')))).toEqual([]);
+    expect(await ids(await file(sheet('<sheetData><row r="1" ht="30" customHeight="1"/></sheetData>')))).toEqual([]);
   });
 
   test('finds things in the workbook, styles and shared strings', async () => {
     expect(await ids(await file({ 'xl/workbook.xml': `<workbook ${MAIN}><sheets><sheet name="S" sheetId="1" state="hidden"/></sheets></workbook>` }))).toEqual(['hidden']);
     expect(await ids(await file({ 'xl/workbook.xml': `<workbook ${MAIN}><sheets/><definedNames><definedName name="X">S!A1</definedName></definedNames></workbook>` }))).toEqual(['definedNames']);
-    expect(await ids(await file({ 'xl/styles.xml': `<styleSheet ${MAIN}><fonts><font><color theme="1"/></font></fonts></styleSheet>` }))).toEqual(['themeColors']);
+    // Theme colors are turned into fixed colors on opening, so they look the same and are not reported.
+    expect(await ids(await file({ 'xl/styles.xml': `<styleSheet ${MAIN}><fonts><font><color theme="1"/></font></fonts></styleSheet>` }))).toEqual([]);
     expect(await ids(await file({ 'xl/styles.xml': `<styleSheet ${MAIN}><fonts><font><color rgb="FF000000"/></font></fonts></styleSheet>` }))).toEqual([]);
     expect(await ids(await file({ 'xl/sharedStrings.xml': `<sst ${MAIN}><si><r><rPr/><t>a</t></r><r><t>b</t></r></si></sst>` }))).toEqual(['richText']);
     expect(await ids(await file({ 'xl/sharedStrings.xml': `<sst ${MAIN}><si><t>plain</t></si></sst>` }))).toEqual([]);
