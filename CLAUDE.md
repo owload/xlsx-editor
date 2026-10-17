@@ -6,7 +6,7 @@ Guidance for Claude Code when working in this repository.
 
 `@owload/xlsx-editor` — a standalone React component for editing `.xlsx` files. It is embedded into **owload**
 (an end-to-end encrypted file storage) which decrypts a file, passes the bytes in through `data`, and receives the
-edited bytes back through the `onSave` callback. The host repository (`owload-front`) is separate; never edit it
+edited bytes back through the `onSave` callback. The host repository (`owload-frontend`) is separate; never edit it
 from here. See `README.md` for the public API.
 
 ## Rules
